@@ -1,0 +1,1319 @@
+// This is your Prisma schema file for Fellow CRM
+// Database: PostgreSQL 16
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// PLATFORM LAYER
+// ========================================
+
+model Tenant {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                   String    @db.VarChar(255)
+  slug                   String    @unique @db.VarChar(100)
+  ownerName              String?   @map("owner_name") @db.VarChar(255)
+  ownerEmail             String    @unique @map("owner_email") @db.VarChar(255)
+  ownerPhone             String?   @map("owner_phone") @db.VarChar(20)
+  
+  planId                 String?   @map("plan_id") @db.Uuid
+  plan                   Plan?     @relation(fields: [planId], references: [id])
+  
+  status                 TenantStatus @default(trial)
+  trialEndsAt            DateTime? @map("trial_ends_at") @db.Timestamptz(6)
+  subscriptionEndsAt     DateTime? @map("subscription_ends_at") @db.Timestamptz(6)
+  
+  // Sequence counters
+  bookingSequence        Int       @default(0) @map("booking_sequence")
+  quotationSequence      Int       @default(0) @map("quotation_sequence")
+  
+  // AI fields
+  aiEnabled              Boolean   @default(false) @map("ai_enabled")
+  aiConversationsUsed    Int       @default(0) @map("ai_conversations_used")
+  aiConversationsLimit   Int       @default(0) @map("ai_conversations_limit")
+  aiModel                String    @default("gpt-4o-mini") @map("ai_model") @db.VarChar(50)
+  aiUsageResetAt         DateTime? @map("ai_usage_reset_at") @db.Date
+  
+  // Branding
+  logoUrl                String?   @map("logo_url") @db.VarChar(500)
+  primaryColor           String?   @map("primary_color") @db.VarChar(10)
+  
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  // Relations
+  users                  User[]
+  tenantFeatures         TenantFeature[]
+  tenantBilling          TenantBilling[]
+  customers              Customer[]
+  leads                  Lead[]
+  packages               Package[]
+  quotations             Quotation[]
+  bookings               Booking[]
+  suppliers              Supplier[]
+  waConfigs              WaConfig?
+  waConversations        WaConversation[]
+  
+  @@map("tenants")
+}
+
+enum TenantStatus {
+  active
+  suspended
+  expired
+  trial
+}
+
+model Plan {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String       @db.VarChar(100)
+  description   String?      @db.Text
+  price         Decimal?     @db.Decimal(10, 2)
+  billingCycle  BillingCycle @map("billing_cycle")
+  isActive      Boolean      @default(true) @map("is_active")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  tenants       Tenant[]
+  
+  @@map("plans")
+}
+
+enum BillingCycle {
+  monthly
+  quarterly
+  annual
+}
+
+model TenantFeature {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  featureKey  String   @map("feature_key") @db.VarChar(100)
+  isEnabled   Boolean  @default(false) @map("is_enabled")
+  config      Json?    @db.JsonB
+  
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@unique([tenantId, featureKey])
+  @@map("tenant_features")
+}
+
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String?   @map("tenant_id") @db.Uuid
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  name         String    @db.VarChar(255)
+  email        String    @unique @db.VarChar(255)
+  phone        String?   @db.VarChar(20)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  role         UserRole
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  // Relations
+  assignedLeads     Lead[]      @relation("AssignedLeads")
+  assignedFollowups Followup[]
+  createdQuotations Quotation[]
+  createdBookings   Booking[]
+  recordedPayments  Payment[]
+  
+  @@map("users")
+}
+
+enum UserRole {
+  super_admin
+  agency_owner
+  manager
+  sales
+  operations
+  accounts
+}
+
+model PlatformLead {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String?          @db.VarChar(255)
+  email       String?          @db.VarChar(255)
+  phone       String?          @db.VarChar(20)
+  agencyName  String?          @map("agency_name") @db.VarChar(255)
+  message     String?          @db.Text
+  source      String?          @db.VarChar(100)
+  status      PlatformLeadStatus @default(new)
+  notes       String?          @db.Text
+  assignedTo  String?          @map("assigned_to") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@map("platform_leads")
+}
+
+enum PlatformLeadStatus {
+  new
+  contacted
+  demo_scheduled
+  closed_won
+  closed_lost
+}
+
+model TenantBilling {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  
+  invoiceNumber String?        @map("invoice_number") @db.VarChar(100)
+  amount        Decimal        @db.Decimal(10, 2)
+  currency      String         @default("INR") @db.VarChar(10)
+  status        BillingStatus  @default(pending)
+  dueDate       DateTime?      @map("due_date") @db.Date
+  paidAt        DateTime?      @map("paid_at") @db.Timestamptz(6)
+  paymentMethod String?        @map("payment_method") @db.VarChar(100)
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@map("tenant_billing")
+}
+
+enum BillingStatus {
+  pending
+  paid
+  overdue
+  cancelled
+}
+
+// ========================================
+// CRM CORE
+// ========================================
+
+model Customer {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String     @map("tenant_id") @db.Uuid
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  
+  name       String     @db.VarChar(255)
+  email      String?    @db.VarChar(255)
+  phone      String     @db.VarChar(20)
+  whatsapp   String?    @db.VarChar(20)
+  city       String?    @db.VarChar(100)
+  state      String?    @db.VarChar(100)
+  source     LeadSource
+  notes      String?    @db.Text
+  tags       String[]
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  leads      Lead[]
+  quotations Quotation[]
+  bookings   Booking[]
+  payments   Payment[]
+  dripJobs   DripJob[]
+  portalSessions PortalSession[]
+  
+  @@index([tenantId])
+  @@map("customers")
+}
+
+model Lead {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+  tenant           Tenant     @relation(fields: [tenantId], references: [id])
+  
+  customerId       String     @map("customer_id") @db.Uuid
+  customer         Customer   @relation(fields: [customerId], references: [id])
+  
+  destination      String?    @db.VarChar(255)
+  travelDate       DateTime?  @map("travel_date") @db.Date
+  returnDate       DateTime?  @map("return_date") @db.Date
+  adults           Int        @default(1)
+  children         Int        @default(0)
+  infants          Int        @default(0)
+  budgetPerPerson  Decimal?   @map("budget_per_person") @db.Decimal(10, 2)
+  preferredHotels  String?    @map("preferred_hotels") @db.Text
+  specialRequests  String?    @map("special_requests") @db.Text
+  
+  source           LeadSource
+  status           LeadStatus @default(new)
+  assignedTo       String?    @map("assigned_to") @db.Uuid
+  assignedUser     User?      @relation("AssignedLeads", fields: [assignedTo], references: [id])
+  lostReason       String?    @map("lost_reason") @db.Text
+  
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  followups        Followup[]
+  leadNotes        LeadNote[]
+  quotations       Quotation[]
+  dripJobs         DripJob[]
+  aiConversations  AiConversation[]
+  
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, assignedTo])
+  @@map("leads")
+}
+
+enum LeadSource {
+  whatsapp
+  phone
+  website
+  walk_in
+  instagram
+  facebook
+  google
+  referral
+}
+
+enum LeadStatus {
+  new
+  contacted
+  interested
+  quotation_sent
+  negotiating
+  won
+  lost
+  cold
+}
+
+model Followup {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  
+  leadId      String?        @map("lead_id") @db.Uuid
+  lead        Lead?          @relation(fields: [leadId], references: [id])
+  
+  bookingId   String?        @map("booking_id") @db.Uuid
+  booking     Booking?       @relation(fields: [bookingId], references: [id])
+  
+  assignedTo  String         @map("assigned_to") @db.Uuid
+  assignedUser User          @relation(fields: [assignedTo], references: [id])
+  
+  dueAt       DateTime       @map("due_at") @db.Timestamptz(6)
+  type        FollowupType
+  note        String?        @db.Text
+  status      FollowupStatus @default(pending)
+  completedAt DateTime?      @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@index([tenantId, dueAt, status])
+  @@map("followups")
+}
+
+enum FollowupType {
+  call
+  whatsapp
+  email
+  visit
+  other
+}
+
+enum FollowupStatus {
+  pending
+  done
+  missed
+}
+
+model LeadNote {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String       @map("tenant_id") @db.Uuid
+  
+  leadId     String       @map("lead_id") @db.Uuid
+  lead       Lead         @relation(fields: [leadId], references: [id])
+  
+  createdBy  String       @map("created_by") @db.Uuid
+  type       LeadNoteType
+  content    String       @db.Text
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  
+  @@map("lead_notes")
+}
+
+enum LeadNoteType {
+  call
+  whatsapp
+  email
+  note
+  meeting
+}
+
+// ========================================
+// PACKAGE BUILDER
+// ========================================
+
+model Package {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  
+  name          String   @db.VarChar(255)
+  destination   String   @db.VarChar(255)
+  durationDays  Int      @map("duration_days")
+  durationNights Int     @map("duration_nights")
+  description   String?  @db.Text
+  isActive      Boolean  @default(true) @map("is_active")
+  createdBy     String?  @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  packageItems    PackageItem[]
+  quotations      Quotation[]
+  bookings        Booking[]
+  itineraryTemplate PackageItineraryTemplate?
+  
+  @@index([tenantId])
+  @@map("packages")
+}
+
+model PackageItem {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String          @map("tenant_id") @db.Uuid
+  
+  packageId     String          @map("package_id") @db.Uuid
+  package       Package         @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  
+  category      PackageCategory
+  name          String          @db.VarChar(255)
+  description   String?         @db.Text
+  
+  supplierId    String?         @map("supplier_id") @db.Uuid
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id])
+  
+  supplierCost  Decimal         @default(0) @map("supplier_cost") @db.Decimal(10, 2)
+  markupType    MarkupType      @default(fixed) @map("markup_type")
+  markupValue   Decimal         @default(0) @map("markup_value") @db.Decimal(10, 2)
+  customerPrice Decimal         @map("customer_price") @db.Decimal(10, 2)
+  sortOrder     Int             @default(0) @map("sort_order")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@map("package_items")
+}
+
+enum PackageCategory {
+  hotel
+  flight
+  transfer
+  activity
+  tour
+  meal
+  visa
+  insurance
+  other
+}
+
+enum MarkupType {
+  fixed
+  percentage
+}
+
+// ========================================
+// QUOTATION SYSTEM
+// ========================================
+
+model Quotation {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String           @map("tenant_id") @db.Uuid
+  tenant              Tenant           @relation(fields: [tenantId], references: [id])
+  
+  quotationNumber     String           @map("quotation_number") @db.VarChar(50)
+  
+  leadId              String?          @map("lead_id") @db.Uuid
+  lead                Lead?            @relation(fields: [leadId], references: [id])
+  
+  customerId          String           @map("customer_id") @db.Uuid
+  customer            Customer         @relation(fields: [customerId], references: [id])
+  
+  packageId           String?          @map("package_id") @db.Uuid
+  package             Package?         @relation(fields: [packageId], references: [id])
+  
+  destination         String?          @db.VarChar(255)
+  travelDate          DateTime?        @map("travel_date") @db.Date
+  returnDate          DateTime?        @map("return_date") @db.Date
+  adults              Int              @default(1)
+  children            Int              @default(0)
+  infants             Int              @default(0)
+  
+  totalSupplierCost   Decimal          @default(0) @map("total_supplier_cost") @db.Decimal(12, 2)
+  totalCustomerPrice  Decimal          @default(0) @map("total_customer_price") @db.Decimal(12, 2)
+  grossProfit         Decimal          @default(0) @map("gross_profit") @db.Decimal(12, 2)
+  
+  status              QuotationStatus  @default(draft)
+  validUntil          DateTime?        @map("valid_until") @db.Date
+  notes               String?          @db.Text
+  pdfUrl              String?          @map("pdf_url") @db.VarChar(500)
+  sentVia             SentVia?         @map("sent_via")
+  sentAt              DateTime?        @map("sent_at") @db.Timestamptz(6)
+  
+  createdBy           String           @map("created_by") @db.Uuid
+  createdByUser       User             @relation(fields: [createdBy], references: [id])
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  quotationItems      QuotationItem[]
+  bookings            Booking[]
+  
+  @@unique([tenantId, quotationNumber])
+  @@index([tenantId])
+  @@map("quotations")
+}
+
+enum QuotationStatus {
+  draft
+  sent
+  viewed
+  accepted
+  rejected
+  expired
+  revised
+}
+
+enum SentVia {
+  whatsapp
+  email
+  both
+}
+
+model QuotationItem {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String          @map("tenant_id") @db.Uuid
+  
+  quotationId   String          @map("quotation_id") @db.Uuid
+  quotation     Quotation       @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  
+  category      PackageCategory
+  name          String          @db.VarChar(255)
+  description   String?         @db.Text
+  
+  supplierId    String?         @map("supplier_id") @db.Uuid
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id])
+  
+  supplierCost  Decimal         @default(0) @map("supplier_cost") @db.Decimal(10, 2)
+  customerPrice Decimal         @map("customer_price") @db.Decimal(10, 2)
+  sortOrder     Int             @default(0) @map("sort_order")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  
+  @@map("quotation_items")
+}
+
+// ========================================
+// BOOKING MANAGEMENT
+// ========================================
+
+model Booking {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String        @map("tenant_id") @db.Uuid
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  
+  bookingNumber  String        @map("booking_number") @db.VarChar(50)
+  
+  quotationId    String?       @map("quotation_id") @db.Uuid
+  quotation      Quotation?    @relation(fields: [quotationId], references: [id])
+  
+  customerId     String        @map("customer_id") @db.Uuid
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  
+  destination    String        @db.VarChar(255)
+  travelDate     DateTime      @map("travel_date") @db.Date
+  returnDate     DateTime?     @map("return_date") @db.Date
+  adults         Int           @default(1)
+  children       Int           @default(0)
+  infants        Int           @default(0)
+  
+  packageId      String?       @map("package_id") @db.Uuid
+  package        Package?      @relation(fields: [packageId], references: [id])
+  
+  totalAmount    Decimal       @map("total_amount") @db.Decimal(12, 2)
+  amountPaid     Decimal       @default(0) @map("amount_paid") @db.Decimal(12, 2)
+  balance        Decimal       @default(0) @db.Decimal(12, 2)
+  
+  status         BookingStatus @default(confirmed)
+  assignedSales  String?       @map("assigned_sales") @db.Uuid
+  assignedOps    String?       @map("assigned_ops") @db.Uuid
+  notes          String?       @db.Text
+  cancelledAt    DateTime?     @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason   String?       @map("cancel_reason") @db.Text
+  
+  createdBy      String        @map("created_by") @db.Uuid
+  createdByUser  User          @relation(fields: [createdBy], references: [id])
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  travellers         Traveller[]
+  payments           Payment[]
+  paymentSchedules   PaymentSchedule[]
+  followups          Followup[]
+  expenses           Expense[]
+  visaApplications   VisaApplication[]
+  supplierBookings   SupplierBooking[]
+  itinerary          Itinerary?
+  portalSessions     PortalSession[]
+  
+  @@unique([tenantId, bookingNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, travelDate])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  confirmed
+  documents_pending
+  visa_processing
+  ready
+  travelling
+  completed
+  cancelled
+}
+
+model Traveller {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String     @map("tenant_id") @db.Uuid
+  
+  bookingId      String     @map("booking_id") @db.Uuid
+  booking        Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  customerId     String?    @map("customer_id") @db.Uuid
+  name           String     @db.VarChar(255)
+  dateOfBirth    DateTime?  @map("date_of_birth") @db.Date
+  gender         Gender?
+  type           TravellerType
+  passportNumber String?    @map("passport_number") @db.VarChar(100)
+  passportExpiry DateTime?  @map("passport_expiry") @db.Date
+  placeOfBirth   String?    @map("place_of_birth") @db.VarChar(100)
+  nationality    String?    @db.VarChar(100)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  documents         TravellerDocument[]
+  visaApplications  VisaApplication[]
+  visaChecklistItems VisaChecklistItem[]
+
+  @@map("travellers")
+}
+
+enum Gender {
+  male
+  female
+  other
+}
+
+enum TravellerType {
+  adult
+  child
+  infant
+}
+
+model TravellerDocument {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  
+  travellerId   String         @map("traveller_id") @db.Uuid
+  traveller     Traveller      @relation(fields: [travellerId], references: [id], onDelete: Cascade)
+  
+  bookingId     String         @map("booking_id") @db.Uuid
+  docType       DocumentType   @map("doc_type")
+  fileUrl       String?        @map("file_url") @db.VarChar(500)
+  fileName      String?        @map("file_name") @db.VarChar(255)
+  status        DocumentStatus @default(pending)
+  rejectionNote String?        @map("rejection_note") @db.Text
+  uploadedBy    String?        @map("uploaded_by") @db.Uuid
+  uploadedAt    DateTime?      @map("uploaded_at") @db.Timestamptz(6)
+  verifiedBy    String?        @map("verified_by") @db.Uuid
+  verifiedAt    DateTime?      @map("verified_at") @db.Timestamptz(6)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@index([travellerId, docType])
+  @@map("traveller_documents")
+}
+
+enum DocumentType {
+  passport
+  photo
+  pan
+  aadhaar
+  visa
+  flight_ticket
+  insurance
+  hotel_voucher
+  other
+}
+
+enum DocumentStatus {
+  pending
+  received
+  verified
+  rejected
+  missing
+}
+
+// ========================================
+// SUPPLIER MANAGEMENT
+// ========================================
+
+model Supplier {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  
+  companyName    String   @map("company_name") @db.VarChar(255)
+  contactPerson  String?  @map("contact_person") @db.VarChar(255)
+  phone          String?  @db.VarChar(20)
+  whatsapp       String?  @db.VarChar(20)
+  email          String?  @db.VarChar(255)
+  destination    String?  @db.VarChar(255)
+  services       String[]
+  paymentTerms   String?  @map("payment_terms") @db.Text
+  contractUrl    String?  @map("contract_url") @db.VarChar(500)
+  rating         Int?     @db.SmallInt
+  notes          String?  @db.Text
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  packageItems      PackageItem[]
+  quotationItems    QuotationItem[]
+  supplierPayments  SupplierPayment[]
+  supplierBookings  SupplierBooking[]
+  visaAgentFor      VisaApplication[]
+  
+  @@index([tenantId])
+  @@map("suppliers")
+}
+
+// ========================================
+// PAYMENT & FINANCE
+// ========================================
+
+model Payment {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  
+  bookingId     String        @map("booking_id") @db.Uuid
+  booking       Booking       @relation(fields: [bookingId], references: [id])
+  
+  customerId    String        @map("customer_id") @db.Uuid
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  
+  amount        Decimal       @db.Decimal(12, 2)
+  paymentType   PaymentType   @map("payment_type")
+  paymentMethod PaymentMethod @map("payment_method")
+  reference     String?       @db.VarChar(255)
+  receiptUrl    String?       @map("receipt_url") @db.VarChar(500)
+  paidAt        DateTime      @map("paid_at") @db.Timestamptz(6)
+  dueDate       DateTime?     @map("due_date") @db.Date
+  notes         String?       @db.Text
+  
+  recordedBy    String        @map("recorded_by") @db.Uuid
+  recordedByUser User         @relation(fields: [recordedBy], references: [id])
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@index([bookingId])
+  @@index([tenantId])
+  @@map("payments")
+}
+
+enum PaymentType {
+  advance
+  installment
+  balance
+  refund
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  upi
+  cheque
+  card
+  other
+}
+
+model PaymentSchedule {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String               @map("tenant_id") @db.Uuid
+  
+  bookingId     String               @map("booking_id") @db.Uuid
+  booking       Booking              @relation(fields: [bookingId], references: [id])
+  
+  amountDue     Decimal              @map("amount_due") @db.Decimal(12, 2)
+  dueDate       DateTime             @map("due_date") @db.Date
+  label         String?              @db.VarChar(100)
+  status        PaymentScheduleStatus @default(pending)
+  paymentId     String?              @map("payment_id") @db.Uuid
+  reminderSent  Boolean              @default(false) @map("reminder_sent")
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@index([tenantId, dueDate, status])
+  @@map("payment_schedules")
+}
+
+enum PaymentScheduleStatus {
+  pending
+  paid
+  overdue
+}
+
+model SupplierPayment {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  
+  supplierId    String        @map("supplier_id") @db.Uuid
+  supplier      Supplier      @relation(fields: [supplierId], references: [id])
+  
+  bookingId     String?       @map("booking_id") @db.Uuid
+  amount        Decimal       @db.Decimal(12, 2)
+  paymentMethod PaymentMethod @map("payment_method")
+  reference     String?       @db.VarChar(255)
+  paidAt        DateTime?     @map("paid_at") @db.Timestamptz(6)
+  status        SupplierPaymentStatus @default(pending)
+  dueDate       DateTime?     @map("due_date") @db.Date
+  notes         String?       @db.Text
+  recordedBy    String        @map("recorded_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@map("supplier_payments")
+}
+
+enum SupplierPaymentStatus {
+  pending
+  paid
+}
+
+model Expense {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  
+  bookingId    String         @map("booking_id") @db.Uuid
+  booking      Booking        @relation(fields: [bookingId], references: [id])
+  
+  category     ExpenseCategory
+  description  String         @db.VarChar(255)
+  amount       Decimal        @db.Decimal(10, 2)
+  receiptUrl   String?        @map("receipt_url") @db.VarChar(500)
+  expenseDate  DateTime       @map("expense_date") @db.Date
+  recordedBy   String         @map("recorded_by") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@map("expenses")
+}
+
+enum ExpenseCategory {
+  visa_fee
+  porterage
+  transport
+  meal
+  tip
+  miscellaneous
+}
+
+// ========================================
+// WHATSAPP INTEGRATION
+// ========================================
+
+model WaConfig {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String    @unique @map("tenant_id") @db.Uuid
+  tenant               Tenant    @relation(fields: [tenantId], references: [id])
+  
+  waPhoneNumberId      String    @map("wa_phone_number_id") @db.VarChar(100)
+  waAccessToken        String    @map("wa_access_token") @db.Text
+  waBusinessAccountId  String?   @map("wa_business_account_id") @db.VarChar(100)
+  waWebhookVerified    Boolean   @default(false) @map("wa_webhook_verified")
+  bspProvider          BspProvider @default(meta_direct) @map("bsp_provider")
+  bspApiKey            String?   @map("bsp_api_key") @db.Text
+  connectedAt          DateTime? @map("connected_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@map("wa_configs")
+}
+
+enum BspProvider {
+  meta_direct
+  wati
+  interakt
+  twilio
+}
+
+model WaConversation {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String              @map("tenant_id") @db.Uuid
+  tenant        Tenant              @relation(fields: [tenantId], references: [id])
+  
+  waPhone       String              @map("wa_phone") @db.VarChar(20)
+  leadId        String?             @map("lead_id") @db.Uuid
+  chatStep      Int                 @default(0) @map("chat_step")
+  chatData      Json?               @map("chat_data") @db.JsonB
+  state         WaConversationState @default(chatbot)
+  isActive      Boolean             @default(true) @map("is_active")
+  lastMessageAt DateTime?           @map("last_message_at") @db.Timestamptz(6)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  messages      WaMessage[]
+  aiConversations AiConversation[]
+  
+  @@index([tenantId, waPhone, isActive])
+  @@map("wa_conversations")
+}
+
+enum WaConversationState {
+  chatbot
+  ai
+  human
+  opted_out
+}
+
+model WaMessage {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String          @map("tenant_id") @db.Uuid
+  
+  conversationId  String          @map("conversation_id") @db.Uuid
+  conversation    WaConversation  @relation(fields: [conversationId], references: [id])
+  
+  direction       MessageDirection
+  content         String?         @db.Text
+  messageType     MessageType     @map("message_type")
+  waMessageId     String?         @map("wa_message_id") @db.VarChar(255)
+  status          MessageStatus?
+  sentAt          DateTime        @default(now()) @map("sent_at") @db.Timestamptz(6)
+  
+  @@map("wa_messages")
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+enum MessageType {
+  text
+  image
+  document
+  template
+}
+
+enum MessageStatus {
+  sent
+  delivered
+  read
+  failed
+}
+
+// ========================================
+// NOTIFICATIONS
+// ========================================
+
+model Notification {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String           @map("tenant_id") @db.Uuid
+  
+  userId     String           @map("user_id") @db.Uuid
+  type       NotificationType
+  title      String           @db.VarChar(255)
+  body       String?          @db.Text
+  entityType String?          @map("entity_type") @db.VarChar(50)
+  entityId   String?          @map("entity_id") @db.Uuid
+  isRead     Boolean          @default(false) @map("is_read")
+  readAt     DateTime?        @map("read_at") @db.Timestamptz(6)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  
+  @@index([tenantId])
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  new_lead
+  followup_due
+  payment_received
+  payment_overdue
+  document_missing
+  visa_update
+  booking_update
+  system
+}
+
+// ========================================
+// VISA MANAGEMENT
+// ========================================
+
+model VisaApplication {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+
+  bookingId        String     @map("booking_id") @db.Uuid
+  booking          Booking    @relation(fields: [bookingId], references: [id])
+
+  travellerId      String     @map("traveller_id") @db.Uuid
+  traveller        Traveller  @relation(fields: [travellerId], references: [id])
+
+  destination      String     @db.VarChar(255)
+  visaType         String?    @map("visa_type") @db.VarChar(100)
+  status           VisaStatus @default(not_started)
+
+  submittedAt      DateTime?  @map("submitted_at") @db.Date
+  expectedDate     DateTime?  @map("expected_date") @db.Date
+  approvedAt       DateTime?  @map("approved_at") @db.Date
+  visaNumber       String?    @map("visa_number") @db.VarChar(100)
+  rejectionReason  String?    @map("rejection_reason") @db.Text
+
+  visaAgentId      String?    @map("visa_agent_id") @db.Uuid
+  visaAgent        Supplier?  @relation(fields: [visaAgentId], references: [id])
+
+  notes            String?    @db.Text
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  checklistItems   VisaChecklistItem[]
+
+  @@index([bookingId])
+  @@index([tenantId])
+  @@map("visa_applications")
+}
+
+enum VisaStatus {
+  not_started
+  collecting_docs
+  submitted
+  processing
+  approved
+  rejected
+}
+
+model VisaChecklistItem {
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String              @map("tenant_id") @db.Uuid
+
+  visaId       String              @map("visa_id") @db.Uuid
+  visa         VisaApplication     @relation(fields: [visaId], references: [id], onDelete: Cascade)
+
+  travellerId  String              @map("traveller_id") @db.Uuid
+  traveller    Traveller           @relation(fields: [travellerId], references: [id])
+
+  itemName     String              @map("item_name") @db.VarChar(255)
+  isRequired   Boolean             @default(true) @map("is_required")
+  status       VisaChecklistStatus @default(pending)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("visa_checklist_items")
+}
+
+enum VisaChecklistStatus {
+  pending
+  received
+  not_applicable
+}
+
+model DestinationVisaTemplate {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // NULL = global platform template; set = per-tenant override
+  tenantId       String?  @map("tenant_id") @db.Uuid
+  isGlobal       Boolean  @default(false) @map("is_global")
+  destination    String   @db.VarChar(255)
+  checklistItems Json     @map("checklist_items") @db.JsonB
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("destination_visa_templates")
+}
+
+// ========================================
+// SUPPLIER BOOKINGS
+// ========================================
+
+model SupplierBooking {
+  id              String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String                @map("tenant_id") @db.Uuid
+
+  bookingId       String                @map("booking_id") @db.Uuid
+  booking         Booking               @relation(fields: [bookingId], references: [id])
+
+  supplierId      String                @map("supplier_id") @db.Uuid
+  supplier        Supplier              @relation(fields: [supplierId], references: [id])
+
+  serviceType     PackageCategory       @map("service_type")
+  description     String?               @db.Text
+  amount          Decimal               @db.Decimal(10, 2)
+  status          SupplierBookingStatus @default(pending)
+  confirmationRef String?               @map("confirmation_ref") @db.VarChar(255)
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("supplier_bookings")
+}
+
+enum SupplierBookingStatus {
+  pending
+  confirmed
+  cancelled
+}
+
+// ========================================
+// ITINERARY BUILDER
+// ========================================
+
+model PackageItineraryTemplate {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+
+  packageId   String   @unique @map("package_id") @db.Uuid
+  package     Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  title       String?  @db.VarChar(255)
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  templateDays PackageItineraryTemplateDay[]
+  itineraries  Itinerary[]
+
+  // One template per package per tenant
+  @@unique([tenantId, packageId])
+  @@map("package_itinerary_templates")
+}
+
+model PackageItineraryTemplateDay {
+  id          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String                   @map("tenant_id") @db.Uuid
+
+  templateId  String                   @map("template_id") @db.Uuid
+  template    PackageItineraryTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  dayNumber   Int                      @map("day_number")
+  title       String?                  @db.VarChar(255)
+  description String?                  @db.Text
+  // [{time: "09:00", icon: "✈️", description: "Arrive at Singapore"}]
+  activities  Json                     @db.JsonB
+  sortOrder   Int                      @default(0) @map("sort_order")
+  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("package_itinerary_template_days")
+}
+
+model Itinerary {
+  id          String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String                    @map("tenant_id") @db.Uuid
+
+  bookingId   String                    @unique @map("booking_id") @db.Uuid
+  booking     Booking                   @relation(fields: [bookingId], references: [id])
+
+  title       String?                   @db.VarChar(255)
+  publicSlug  String?                   @map("public_slug") @db.VarChar(100)
+  pdfUrl      String?                   @map("pdf_url") @db.VarChar(500)
+  generatedBy ItineraryGeneratedBy      @default(manual) @map("generated_by")
+
+  templateId  String?                   @map("template_id") @db.Uuid
+  template    PackageItineraryTemplate? @relation(fields: [templateId], references: [id])
+
+  createdBy   String?                   @map("created_by") @db.Uuid
+  createdAt   DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  days        ItineraryDay[]
+
+  @@unique([tenantId, publicSlug])
+  @@map("itineraries")
+}
+
+enum ItineraryGeneratedBy {
+  manual
+  template
+  ai
+}
+
+model ItineraryDay {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+
+  itineraryId  String    @map("itinerary_id") @db.Uuid
+  itinerary    Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+
+  dayNumber    Int       @map("day_number")
+  date         DateTime? @db.Date
+  title        String?   @db.VarChar(255)
+  description  String?   @db.Text
+  // [{time: "09:00", icon: "✈️", description: "Airport pickup & transfer"}]
+  activities   Json      @db.JsonB
+  sortOrder    Int       @default(0) @map("sort_order")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("itinerary_days")
+}
+
+// ========================================
+// DRIP SEQUENCES (WhatsApp Automation)
+// ========================================
+
+model DripSequence {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String          @map("tenant_id") @db.Uuid
+
+  name          String          @db.VarChar(255)
+  triggerStage  DripTrigger     @map("trigger_stage")
+  isActive      Boolean         @default(true) @map("is_active")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  steps         DripSequenceStep[]
+  jobs          DripJob[]
+
+  @@map("drip_sequences")
+}
+
+enum DripTrigger {
+  new_lead
+  quotation_sent
+  payment_pending
+  docs_pending
+  post_trip
+}
+
+model DripSequenceStep {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String       @map("tenant_id") @db.Uuid
+
+  sequenceId      String       @map("sequence_id") @db.Uuid
+  sequence        DripSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  stepNumber      Int          @map("step_number")
+  delayDays       Int          @map("delay_days")
+  messageTemplate String       @map("message_template") @db.Text
+  stepType        DripStepType @map("step_type")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  jobs            DripJob[]
+
+  @@map("drip_sequence_steps")
+}
+
+enum DripStepType {
+  whatsapp
+  email
+}
+
+model DripJob {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String       @map("tenant_id") @db.Uuid
+
+  sequenceId   String       @map("sequence_id") @db.Uuid
+  sequence     DripSequence @relation(fields: [sequenceId], references: [id])
+
+  stepId       String       @map("step_id") @db.Uuid
+  step         DripSequenceStep @relation(fields: [stepId], references: [id])
+
+  leadId       String       @map("lead_id") @db.Uuid
+  lead         Lead         @relation(fields: [leadId], references: [id])
+
+  customerId   String       @map("customer_id") @db.Uuid
+  customer     Customer     @relation(fields: [customerId], references: [id])
+
+  scheduledAt  DateTime     @map("scheduled_at") @db.Timestamptz(6)
+  status       DripJobStatus @default(scheduled)
+  sentAt       DateTime?    @map("sent_at") @db.Timestamptz(6)
+  bullmqJobId  String?      @map("bullmq_job_id") @db.VarChar(255)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([tenantId, scheduledAt, status])
+  @@map("drip_jobs")
+}
+
+enum DripJobStatus {
+  scheduled
+  sent
+  cancelled
+  failed
+}
+
+// ========================================
+// CUSTOMER PORTAL
+// ========================================
+
+model PortalSession {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+
+  bookingId      String   @map("booking_id") @db.Uuid
+  booking        Booking  @relation(fields: [bookingId], references: [id])
+
+  customerId     String   @map("customer_id") @db.Uuid
+  customer       Customer @relation(fields: [customerId], references: [id])
+
+  otp            String?  @db.VarChar(10)          // hashed
+  otpExpiresAt   DateTime? @map("otp_expires_at") @db.Timestamptz(6)
+  token          String?   @unique @db.VarChar(255) // session token after OTP verified
+  tokenExpiresAt DateTime? @map("token_expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("portal_sessions")
+}
+
+// ========================================
+// AI ASSISTANT
+// ========================================
+
+model AiConversation {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+
+  leadId             String?  @map("lead_id") @db.Uuid
+  lead               Lead?    @relation(fields: [leadId], references: [id])
+
+  waConversationId   String?  @map("wa_conversation_id") @db.Uuid
+  waConversation     WaConversation? @relation(fields: [waConversationId], references: [id])
+
+  source             AiConversationSource
+  // [{role: "user", content: "...", timestamp: "..."}, ...]
+  messages           Json     @db.JsonB
+  tokensUsed         Int      @default(0) @map("tokens_used")
+  model              String?  @db.VarChar(50)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("ai_conversations")
+}
+
+enum AiConversationSource {
+  whatsapp
+  crm_chat
+}
+
+// ========================================
+// NOTE: Additional indexes defined directly
+// on models above. Summary of all indexes:
+//
+// Tenant scoping:
+//   leads(tenant_id), customers(tenant_id), bookings(tenant_id),
+//   quotations(tenant_id), payments(tenant_id), suppliers(tenant_id),
+//   notifications(tenant_id)
+//
+// Frequent lookups:
+//   leads(tenant_id, status), leads(tenant_id, assigned_to)
+//   bookings(tenant_id, status), bookings(tenant_id, travel_date)
+//   followups(tenant_id, due_at, status)
+//   payments(booking_id)
+//   drip_jobs(tenant_id, scheduled_at, status)
+//   traveller_documents(traveller_id, doc_type)
+//   visa_applications(booking_id)
+//   payment_schedules(tenant_id, due_date, status)
+//   notifications(user_id, is_read, created_at)
+//   wa_conversations(tenant_id, wa_phone, is_active)
+// ========================================
