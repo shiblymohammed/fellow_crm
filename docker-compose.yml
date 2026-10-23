@@ -6,7 +6,7 @@ services:
     container_name: fellow_crm_postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: fellow_crm
       POSTGRES_USER: fellow
@@ -14,7 +14,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fellow"]
+      test: ["CMD-SHELL", "pg_isready -U fellow -d fellow_crm"]
       interval: 10s
       timeout: 5s
       retries: 5

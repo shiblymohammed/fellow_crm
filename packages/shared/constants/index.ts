@@ -71,3 +71,6 @@ export const DEFAULT_AI_CONVERSATIONS_LIMIT = {
   PRO: 0,
   ENTERPRISE: 2000,
 } as const;
+
+export * from './permissions';
+

@@ -297,7 +297,7 @@ updated_at      TIMESTAMPTZ DEFAULT NOW()
 UNIQUE(tenant_id, booking_number)
 ```
 
-> **Note:** `amount_paid` and `balance` are updated by a database trigger that fires on `INSERT`/`DELETE` on the `payments` table. This ensures they stay in sync without using generated columns (which can't reference other tables).
+> **Note:** `amount_paid` and `balance` are updated by the application layer (e.g. `PaymentsService` within a Prisma Transaction) whenever a payment is inserted or deleted. This avoids Prisma schema complications with database triggers.
 
 ---
 
@@ -415,7 +415,7 @@ created_at      TIMESTAMPTZ DEFAULT NOW()
 updated_at      TIMESTAMPTZ DEFAULT NOW()
 ```
 
-> **Note:** `outstanding_payable` is NOT stored as a column — it's computed dynamically: `SELECT SUM(amount) FROM supplier_payments WHERE supplier_id = ? AND status = 'pending'`. Storing it would cause desync with actual payment records.
+> **Note:** `outstanding_payable` is NOT stored as a column — it's computed dynamically by aggregating `totalBooked` minus `totalPaid`. Storing it would cause desync with actual payment records.
 
 ### `supplier_bookings`
 ```sql
@@ -625,11 +625,8 @@ created_at      TIMESTAMPTZ DEFAULT NOW()
 updated_at      TIMESTAMPTZ DEFAULT NOW()
 ```
 
-> **Partial unique index** — only one active conversation per phone per tenant:
-> ```sql
-> CREATE UNIQUE INDEX idx_wa_conv_active ON wa_conversations(tenant_id, wa_phone) WHERE is_active = true;
-> ```
-> When a customer messages again after a closed conversation, a new row is created. Old conversations are preserved for history.
+> **Composite index** — `CREATE INDEX idx_wa_conv_active ON wa_conversations(tenant_id, wa_phone, is_active);`
+> The application layer ensures only one conversation per phone per tenant is active. Old conversations are preserved for history.
 
 ### `wa_messages`
 ```sql
@@ -749,8 +746,8 @@ CREATE INDEX idx_payment_schedules_due ON payment_schedules(tenant_id, due_date,
 -- Notifications (unread per user)
 CREATE INDEX idx_notifications_user  ON notifications(user_id, is_read, created_at);
 
--- WhatsApp (partial unique — one active conversation per phone per tenant)
-CREATE UNIQUE INDEX idx_wa_conv_active ON wa_conversations(tenant_id, wa_phone) WHERE is_active = true;
+-- WhatsApp (Composite index to support application-level uniqueness checks)
+CREATE INDEX idx_wa_conv_active ON wa_conversations(tenant_id, wa_phone, is_active);
 ```
 
 ---

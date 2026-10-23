@@ -1,16 +1,18 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Inject } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FEATURE_KEY } from '../decorators/requires-feature.decorator';
-import { PrismaClient } from '@prisma/client';
-
-// Note: In a production app, we would inject a Redis service or PrismaService here
-// rather than instantiating PrismaClient directly, but for now we'll use this or 
-// expect the dependency to be injected.
-const prisma = new PrismaClient();
+import { PrismaService } from '../../prisma/prisma.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 @Injectable()
 export class FeatureGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) {}
+
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredFeature = this.reflector.getAllAndOverride<string>(FEATURE_KEY, [
@@ -39,8 +41,17 @@ export class FeatureGuard implements CanActivate {
     }
 
     // Check if tenant has the feature enabled
-    // Ideally this should be cached in Redis
-    const tenantFeature = await prisma.tenantFeature.findUnique({
+    const cacheKey = `feature:${user.tenantId}:${requiredFeature}`;
+    const cachedStatus = await this.cacheManager.get<boolean>(cacheKey);
+
+    if (cachedStatus !== undefined) {
+      if (!cachedStatus) {
+        throw new ForbiddenException(`Your plan does not include access to: ${requiredFeature}`);
+      }
+      return true;
+    }
+
+    const tenantFeature = await this.prisma.tenantFeature.findUnique({
       where: {
         tenantId_featureKey: {
           tenantId: user.tenantId,
@@ -49,7 +60,12 @@ export class FeatureGuard implements CanActivate {
       },
     });
 
-    if (!tenantFeature || !tenantFeature.isEnabled) {
+    const isEnabled = tenantFeature ? tenantFeature.isEnabled : false;
+    
+    // Cache the result for 5 minutes (in milliseconds)
+    await this.cacheManager.set(cacheKey, isEnabled, 300000);
+
+    if (!isEnabled) {
       throw new ForbiddenException(`Your plan does not include access to: ${requiredFeature}`);
     }
 

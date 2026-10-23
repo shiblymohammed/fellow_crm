@@ -19,6 +19,9 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
     title: 'Fellow',
   },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
   formatDetection: {
     telephone: false,
   },

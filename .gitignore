@@ -51,3 +51,25 @@ prisma/migrations/**/migration.sql
 # Logs
 logs
 *.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Uploads
+uploads/
+**/uploads/
+
+# Shared package build output
+packages/shared/**/*.js
+packages/shared/**/*.d.ts
+packages/shared/**/*.js.map
+
+# Prisma compiled files
+apps/api/prisma/*.js
+apps/api/prisma/*.d.ts
+apps/api/prisma/*.js.map
+
+# Scratch scripts & temp
+.freebuff/
+apps/api/test-*.js
+apps/api/enable-ai.js

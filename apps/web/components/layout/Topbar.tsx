@@ -3,6 +3,7 @@
 import React from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useRouter } from 'next/navigation';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export default function Topbar() {
   const { user, clearAuth } = useAuthStore();
@@ -33,8 +34,11 @@ export default function Topbar() {
           <span className="absolute 1 top-0 right-0.5 w-2 h-2 bg-primary rounded-full border-2 border-white"></span>
         </button>
 
+        {/* Theme Toggle */}
+        <ThemeToggle />
+
         {/* Separator */}
-        <div className="w-px h-6 bg-gray-200"></div>
+        <div className="w-px h-6 bg-gray-200 dark:bg-gray-800"></div>
 
         {/* Profile Dropdown (Simplified for now) */}
         <div className="flex items-center gap-3">

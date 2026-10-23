@@ -42,7 +42,7 @@ export default function LoginPage() {
     }
 
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const response = await api.post('/auth/login', { email: email.trim(), password });
       
       const { accessToken, user } = response.data.data;
       
@@ -82,7 +82,7 @@ export default function LoginPage() {
     <div className="flex flex-col items-center w-full max-w-[600px] mx-auto h-full justify-end sm:justify-center max-h-[100dvh]">
       {/* Transparent Logo Above the Card */}
       <div className="mb-4 sm:mb-6 w-full flex lg:hidden justify-center animate-in fade-in slide-in-from-top-4 duration-700 shrink-0 select-none pointer-events-none mt-auto sm:mt-0">
-        <Image src="/logo_main.png" alt="Fellow Logo" width={160} height={48} className="object-contain drop-shadow-xl sm:w-[200px] sm:h-[60px]" />
+        <Image src="/logo_main.png" alt="Fellow Logo" width={160} height={48} priority className="object-contain drop-shadow-xl w-auto h-auto sm:w-[200px]" />
       </div>
 
       {/* The Login Card - Highly Touch Optimized */}
@@ -176,7 +176,7 @@ export default function LoginPage() {
               </div>
               <span className="text-[14px] sm:text-[15px] text-gray-700 font-medium group-hover:text-gray-900 transition-colors">Keep me signed in</span>
             </label>
-            <Link href="#" className="text-[14px] font-semibold text-primary hover:underline hover:text-[#d94a1d] transition-colors [-webkit-tap-highlight-color:transparent] active:scale-95">
+            <Link href="/forgot-password" className="text-[14px] font-semibold text-primary hover:underline hover:text-[#d94a1d] transition-colors [-webkit-tap-highlight-color:transparent] active:scale-95">
               Forgot password?
             </Link>
           </div>

@@ -3,7 +3,7 @@
 import { useAuthStore } from '@/stores/auth.store';
 
 export default function SuperAdminDashboard() {
-  const { user, clearAuth } = useAuthStore();
+  const { user } = useAuthStore();
 
   return (
     <div className="space-y-6">

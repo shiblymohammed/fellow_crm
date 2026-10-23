@@ -71,86 +71,129 @@ async function main() {
 
   console.log('✅ Super Admin created');
 
-  // 3. Create Demo Tenant (for testing)
-  console.log('Creating demo tenant...');
+  // 3. Create Global Visa Templates
+  console.log('Creating global visa templates...');
   
-  const demoTenant = await prisma.tenant.upsert({
-    where: { slug: 'demo-travels' },
-    update: {},
-    create: {
-      name: 'Demo Travels',
-      slug: 'demo-travels',
-      ownerName: 'Demo Owner',
-      ownerEmail: 'owner@demotravels.com',
-      ownerPhone: '+919876543211',
-      planId: proPlan.id,
-      status: 'trial',
-      trialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days trial
-      aiEnabled: false,
-      aiConversationsLimit: 0,
+  const visaTemplates = [
+    {
+      id: '10000000-1111-1111-1111-000000000001',
+      destination: 'UAE',
+      checklistItems: [
+        { itemName: 'Passport (minimum 6 months validity)', isRequired: true },
+        { itemName: 'Passport size photograph', isRequired: true },
+        { itemName: 'Flight tickets', isRequired: true },
+        { itemName: 'Hotel booking confirmation', isRequired: true },
+        { itemName: 'Travel insurance', isRequired: false },
+      ],
+      notes: 'UAE tourist visa typically takes 3-5 working days. Express processing available.',
     },
-  });
-
-  console.log('✅ Demo tenant created');
-
-  // 4. Create Demo Agency Owner
-  console.log('Creating demo agency owner...');
-  
-  const demoOwnerPassword = await bcrypt.hash('Demo@123456', 10);
-  
-  const demoOwner = await prisma.user.upsert({
-    where: { email: 'owner@demotravels.com' },
-    update: {},
-    create: {
-      email: 'owner@demotravels.com',
-      name: 'Demo Owner',
-      phone: '+919876543211',
-      passwordHash: demoOwnerPassword,
-      role: 'agency_owner',
-      isActive: true,
-      tenantId: demoTenant.id,
+    {
+      id: '10000000-1111-1111-1111-000000000002',
+      destination: 'Schengen',
+      checklistItems: [
+        { itemName: 'Passport (minimum 6 months validity)', isRequired: true },
+        { itemName: 'Two recent passport photographs', isRequired: true },
+        { itemName: 'Flight reservation', isRequired: true },
+        { itemName: 'Hotel booking/accommodation proof', isRequired: true },
+        { itemName: 'Travel insurance (minimum EUR 30,000 coverage)', isRequired: true },
+        { itemName: 'Bank statements (last 6 months)', isRequired: true },
+        { itemName: 'Cover letter', isRequired: true },
+        { itemName: 'Employment letter', isRequired: false },
+        { itemName: 'ITR/Tax documents', isRequired: false },
+      ],
+      notes: 'Schengen visa processing takes 15-20 working days. Apply at least 30 days before travel.',
     },
-  });
-
-  console.log('✅ Demo agency owner created');
-
-  // 5. Enable all features for demo tenant
-  console.log('Enabling features for demo tenant...');
-  
-  const features = [
-    'leads_crm',
-    'packages',
-    'quotations',
-    'bookings',
-    'payments',
-    'documents',
-    'visa_management',
-    'supplier_management',
-    'itinerary_builder',
-    'whatsapp_chatbot',
-    'whatsapp_automation',
-    'reports_analytics',
-    'pdf_generation',
+    {
+      id: '10000000-1111-1111-1111-000000000003',
+      destination: 'USA',
+      checklistItems: [
+        { itemName: 'Valid passport', isRequired: true },
+        { itemName: 'DS-160 confirmation page', isRequired: true },
+        { itemName: 'Visa appointment confirmation', isRequired: true },
+        { itemName: 'Passport photograph (5x5 cm)', isRequired: true },
+        { itemName: 'Flight reservation', isRequired: true },
+        { itemName: 'Hotel booking', isRequired: true },
+        { itemName: 'Bank statements (last 6 months)', isRequired: true },
+        { itemName: 'Employment letter', isRequired: true },
+        { itemName: 'ITR for last 3 years', isRequired: true },
+        { itemName: 'Previous US visa (if any)', isRequired: false },
+      ],
+      notes: 'US B1/B2 visa requires in-person interview at embassy. Processing may take 3-6 weeks.',
+    },
+    {
+      id: '10000000-1111-1111-1111-000000000004',
+      destination: 'UK',
+      checklistItems: [
+        { itemName: 'Passport (minimum 6 months validity)', isRequired: true },
+        { itemName: 'Passport photographs', isRequired: true },
+        { itemName: 'Visa application form', isRequired: true },
+        { itemName: 'Flight tickets', isRequired: true },
+        { itemName: 'Hotel booking confirmation', isRequired: true },
+        { itemName: 'Bank statements (last 6 months)', isRequired: true },
+        { itemName: 'Employment proof', isRequired: true },
+        { itemName: 'Travel insurance', isRequired: true },
+        { itemName: 'Cover letter', isRequired: true },
+      ],
+      notes: 'UK tourist visa processing takes 15-20 working days. Biometrics required.',
+    },
+    {
+      id: '10000000-1111-1111-1111-000000000005',
+      destination: 'Singapore',
+      checklistItems: [
+        { itemName: 'Passport (minimum 6 months validity)', isRequired: true },
+        { itemName: 'Passport photograph', isRequired: true },
+        { itemName: 'Flight booking', isRequired: true },
+        { itemName: 'Hotel confirmation', isRequired: true },
+        { itemName: 'Bank statement (last 3 months)', isRequired: true },
+        { itemName: 'Cover letter', isRequired: false },
+      ],
+      notes: 'Singapore visa typically processed in 3-5 working days.',
+    },
+    {
+      id: '10000000-1111-1111-1111-000000000006',
+      destination: 'Australia',
+      checklistItems: [
+        { itemName: 'Valid passport', isRequired: true },
+        { itemName: 'Passport photograph', isRequired: true },
+        { itemName: 'Flight reservation', isRequired: true },
+        { itemName: 'Hotel bookings', isRequired: true },
+        { itemName: 'Bank statements (last 6 months)', isRequired: true },
+        { itemName: 'Employment letter', isRequired: true },
+        { itemName: 'Travel insurance', isRequired: true },
+        { itemName: 'Cover letter', isRequired: true },
+      ],
+      notes: 'Australia visitor visa (subclass 600) processing takes 15-30 days.',
+    },
+    {
+      id: '10000000-1111-1111-1111-000000000007',
+      destination: 'Thailand',
+      checklistItems: [
+        { itemName: 'Passport (minimum 6 months validity)', isRequired: true },
+        { itemName: 'Passport photograph', isRequired: true },
+        { itemName: 'Flight tickets', isRequired: true },
+        { itemName: 'Hotel booking', isRequired: true },
+        { itemName: 'Bank statement', isRequired: false },
+      ],
+      notes: 'Indian citizens can get visa on arrival or e-visa for Thailand. Processing: 3-5 days.',
+    },
   ];
 
-  for (const featureKey of features) {
-    await prisma.tenantFeature.upsert({
-      where: {
-        tenantId_featureKey: {
-          tenantId: demoTenant.id,
-          featureKey,
-        },
-      },
+  for (const template of visaTemplates) {
+    await prisma.destinationVisaTemplate.upsert({
+      where: { id: template.id },
       update: {},
       create: {
-        tenantId: demoTenant.id,
-        featureKey,
-        isEnabled: true,
+        id: template.id,
+        tenantId: null,
+        isGlobal: true,
+        destination: template.destination,
+        checklistItems: template.checklistItems,
+        notes: template.notes,
       },
     });
   }
 
-  console.log('✅ Features enabled for demo tenant');
+  console.log('✅ Global visa templates created');
 
   console.log('');
   console.log('🎉 Seeding completed!');
@@ -158,11 +201,6 @@ async function main() {
   console.log('📧 Super Admin Credentials:');
   console.log('   Email: admin@fellowcrm.com');
   console.log('   Password: Admin@123456');
-  console.log('');
-  console.log('📧 Demo Agency Owner Credentials:');
-  console.log('   Email: owner@demotravels.com');
-  console.log('   Password: Demo@123456');
-  console.log('   Tenant: demo-travels');
   console.log('');
 }
 
